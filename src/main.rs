@@ -1,4 +1,5 @@
 use clap::Parser;
+use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -37,8 +38,12 @@ struct Cli {
 
 #[tokio::main]
 async fn main() {
+    dotenv().ok();
+
+    std::env::var("STRAPI_BASE_URL").expect("STRAPI_BASE_URL not set");
+    std::env::var("STRAPI_TOKEN").expect("STRAPI_TOKEN not set");
+
     let cli = Cli::parse();
-    println!("Hello, world! {:?}", cli.delete);
 
     match cli.delete.as_str() {
         "orders" => delete_orders().await,
@@ -106,13 +111,16 @@ async fn process_root_orders(root: Root) {
 }
 
 async fn fetch_root_for_page(page: i32) -> Result<Root, reqwest::Error> {
-    //TODO: Get these from env variables
-    const STRAPI_ORDERS_URL: &str = "https://localhost:1337/api/orders";
-    const STRAPI_TOKEN: &str = "REPLACE_ME";
+    let strapi_orders_url: String = format!(
+        "{}/orders",
+        std::env::var("STRAPI_BASE_URL").unwrap().as_str()
+    );
+    let strapi_token: String = std::env::var("STRAPI_TOKEN").unwrap();
+
     let order_filters = create_order_filter(page, 10);
     let client = reqwest::Client::new();
-    let header = format!("Bearer {}", STRAPI_TOKEN);
-    let url = format!("{}?{}", STRAPI_ORDERS_URL, order_filters);
+    let header = format!("Bearer {}", strapi_token);
+    let url = format!("{}?{}", strapi_orders_url, order_filters);
     //add headers
     let res = client
         .get(&url)
