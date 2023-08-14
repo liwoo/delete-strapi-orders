@@ -42,12 +42,15 @@ struct Cli {
     delete: String,
 }
 
+#[derive(Debug)]
+struct StrapiConfig {
+    base_url: String,
+    auth_token: String,
+}
+
 #[tokio::main]
 async fn main() {
     dotenv().ok();
-
-    std::env::var("STRAPI_BASE_URL").expect("STRAPI_BASE_URL not set");
-    std::env::var("STRAPI_TOKEN").expect("STRAPI_TOKEN not set");
 
     let cli = Cli::parse();
 
@@ -56,6 +59,24 @@ async fn main() {
         "customers" => delete_customers().await,
         _ => println!("Invalid command"),
     }
+}
+
+fn load_configs() -> (ShopifyConfig, StrapiConfig) {
+    let strapi_url = std::env::var("STRAPI_BASE_URL").expect("STRAPI_BASE_URL not set");
+    let strapi_token = std::env::var("STRAPI_TOKEN").expect("STRAPI_TOKEN not set");
+    let shopify_token = std::env::var("SHOP_ACCESS_TOKEN").expect("SHOP_ACCESS_TOKEN not set");
+    let shopify_url = std::env::var("SHOP_BASE_URL").expect("SHOP_BASE_URL not set");
+
+    (
+        ShopifyConfig {
+            access_token: shopify_token,
+            shop_url: shopify_url,
+        },
+        StrapiConfig {
+            base_url: strapi_url,
+            auth_token: strapi_token,
+        },
+    )
 }
 
 async fn delete_orders() {
@@ -68,6 +89,7 @@ async fn delete_orders() {
 }
 
 async fn delete_customers() {
+    load_configs();
     println!("Deleting customers");
 }
 
@@ -142,26 +164,21 @@ async fn fetch_root_for_page(page: i32) -> Result<Root, reqwest::Error> {
 
 async fn process_paged_orders(root: &Root, page: i32) -> (i32, i32) {
     //process and handle exceptions per order
-    let shopify_config = ShopifyConfig {
-        access_token: std::env::var("SHOP_ACCESS_TOKEN").unwrap(),
-        shop_url: std::env::var("SERVER_URL").unwrap(),
-    };
+    let (shopify_config, strapi_config) = load_configs();
     let mut processed: i32 = 0;
     for data in &root.data {
         //sleep for 1s
         print!(".");
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        //replace this time with two calls to:
-        //1. Delete the order in Shopify is it exists
-        delete_shopify_order(&shopify_config, data.id).await;
-        //2. Delete the order in Strapi
+        delete_shopify_resource(&shopify_config, "orders", data.id).await;
+        delete_strapi_resource(&strapi_config, "order", data.id).await;
         processed += 1;
     }
     (processed, page)
 }
 
-async fn delete_shopify_order(config: &ShopifyConfig, order_id: i32) -> bool {
-    let url = format!("{}/orders/{}.json", config.shop_url, order_id);
+async fn delete_shopify_resource(config: &ShopifyConfig, resource: &str, res_id: i32) -> bool {
+    let url = format!("{}/{}/{}.json", config.shop_url, resource, res_id);
 
     let client = reqwest::Client::new();
     let mut headers = reqwest::header::HeaderMap::new();
@@ -172,6 +189,22 @@ async fn delete_shopify_order(config: &ShopifyConfig, order_id: i32) -> bool {
     );
 
     let response = client.delete(&url).headers(headers).send().await;
+
+    match response {
+        Ok(_) => true,
+        Err(_) => false,
+    }
+}
+
+async fn delete_strapi_resource(config: &StrapiConfig, resource: &str, res_id: i32) -> bool {
+    let url = format!("{}/{}/{}", config.base_url, resource, res_id);
+
+    let client = reqwest::Client::new();
+    let response = client
+        .delete(&url)
+        .header("Authorization", format!("Bearer {}", config.auth_token))
+        .send()
+        .await;
 
     match response {
         Ok(_) => true,
