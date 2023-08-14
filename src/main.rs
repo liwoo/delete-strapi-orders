@@ -29,6 +29,12 @@ pub struct Root {
     pub meta: Meta,
 }
 
+#[derive(Debug)]
+struct ShopifyConfig {
+    access_token: String,
+    shop_url: String,
+}
+
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
@@ -136,15 +142,39 @@ async fn fetch_root_for_page(page: i32) -> Result<Root, reqwest::Error> {
 
 async fn process_paged_orders(root: &Root, page: i32) -> (i32, i32) {
     //process and handle exceptions per order
+    let shopify_config = ShopifyConfig {
+        access_token: std::env::var("SHOP_ACCESS_TOKEN").unwrap(),
+        shop_url: std::env::var("SERVER_URL").unwrap(),
+    };
     let mut processed: i32 = 0;
-    for _ in &root.data {
+    for data in &root.data {
         //sleep for 1s
         print!(".");
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         //replace this time with two calls to:
         //1. Delete the order in Shopify is it exists
+        delete_shopify_order(&shopify_config, data.id).await;
         //2. Delete the order in Strapi
         processed += 1;
     }
     (processed, page)
+}
+
+async fn delete_shopify_order(config: &ShopifyConfig, order_id: i32) -> bool {
+    let url = format!("{}/orders/{}.json", config.shop_url, order_id);
+
+    let client = reqwest::Client::new();
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert("Content-Type", "application/json".parse().unwrap());
+    headers.insert(
+        "X-Shopify-Access-Token",
+        config.access_token.parse().unwrap(),
+    );
+
+    let response = client.delete(&url).headers(headers).send().await;
+
+    match response {
+        Ok(_) => true,
+        Err(_) => false,
+    }
 }
