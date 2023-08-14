@@ -1,3 +1,4 @@
+use clap::Parser;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -27,15 +28,36 @@ pub struct Root {
     pub meta: Meta,
 }
 
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct Cli {
+    #[arg(long)]
+    delete: String,
+}
+
 #[tokio::main]
 async fn main() {
-    //TODO: Convert to CLI for delete customers and delete orders choice...
+    let cli = Cli::parse();
+    println!("Hello, world! {:?}", cli.delete);
+
+    match cli.delete.as_str() {
+        "orders" => delete_orders().await,
+        "customers" => delete_customers().await,
+        _ => println!("Invalid command"),
+    }
+}
+
+async fn delete_orders() {
     let res = fetch_root_for_page(1).await;
     //TODO: Replace this with fetch meta
     match res {
         Ok(root) => process_root_orders(root).await, //need to give it meta
         Err(e) => println!("Error: {}", e),
     }
+}
+
+async fn delete_customers() {
+    println!("Deleting customers");
 }
 
 fn create_order_filter(page: i32, page_size: i32) -> String {
