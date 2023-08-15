@@ -20,7 +20,13 @@ pub struct Meta {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DataElement {
     pub id: i32,
-    //TODO: Capture the orderId which will be an optional
+    pub attributes: DataAtribute,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DataAtribute {
+    #[serde(rename = "cartReference")]
+    pub cart_reference: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -94,7 +100,7 @@ async fn delete_customers() {
 }
 
 fn create_order_filter(page: i32, page_size: i32) -> String {
-    format!("fields[0]=id&pagination[pageSize]={}&pagination[page]={}&publicationState=preview&locale[0]=en", page_size, page)
+    format!("fields[0]=id&fields[1]=cartReference&pagination[pageSize]={}&pagination[page]={}&publicationState=preview&locale[0]=en", page_size, page)
 }
 
 async fn process_root_orders(root: Root) {
@@ -167,17 +173,22 @@ async fn process_paged_orders(root: &Root, page: i32) -> (i32, i32) {
     let (shopify_config, strapi_config) = load_configs();
     let mut processed: i32 = 0;
     for data in &root.data {
-        //sleep for 1s
         print!(".");
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        delete_shopify_resource(&shopify_config, "orders", data.id).await;
+        if data.attributes.cart_reference.is_some() {
+            delete_shopify_resource(
+                &shopify_config,
+                "orders",
+                data.attributes.cart_reference.as_ref().unwrap().to_string(),
+            )
+            .await;
+        }
         delete_strapi_resource(&strapi_config, "order", data.id).await;
         processed += 1;
     }
     (processed, page)
 }
 
-async fn delete_shopify_resource(config: &ShopifyConfig, resource: &str, res_id: i32) -> bool {
+async fn delete_shopify_resource(config: &ShopifyConfig, resource: &str, res_id: String) -> bool {
     let url = format!("{}/{}/{}.json", config.shop_url, resource, res_id);
 
     let client = reqwest::Client::new();
